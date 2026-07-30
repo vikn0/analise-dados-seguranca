@@ -1,0 +1,91 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ==========================================
+# 1. INSPEÇÃO, CONFIGURAÇÃO E CARREGAMENTO
+# ==========================================
+# Configura o Pandas para mostrar o texto completo das colunas
+pd.set_option('display.max_colwidth', None)
+
+# Carrega a base de dados (substitua pelo caminho correto do seu arquivo se necessário)
+# df_analise = pd.read_excel('seu_arquivo.xlsx') 
+
+print("--- Iniciando o Framework de Análise ---")
+
+# ==========================================
+# 2. LIMPEZA E EXTRAÇÃO COM REGEX
+# ==========================================
+# Separa o período de gravação em início e fim (Regex flexível para as/ás/às)
+df_analise[['INICIO_GRAVACAO', 'FIM_GRAVACAO']] = df_analise['PERIODO DE GRAVAÇÃO'].str.split(r'\s+[aàá]s\s+', expand=True, regex=True)
+
+# Extrai Vigilante e Saída da coluna AÇÃO TOMADA (Regex flexível para acentuação)
+padrao_regex_acao = r"Acompanhado pelo vigilante\s+(.+?)\s+até a sa[íi]da\s+(.+)"
+df_analise[['VIGILANTE', 'SAIDA']] = df_analise['AÇÃO TOMADA'].str.extract(padrao_regex_acao, expand=True)
+
+# Remove espaços em branco invisíveis nas pontas das colunas e dos textos
+df_analise.columns = df_analise.columns.str.strip()
+
+# ==========================================
+# 3. PADRONIZAÇÃO E TRATAMENTO DE FALSOS NULOS
+# ==========================================
+colunas_texto = ['TURNO', 'LOCAL DE IDENFICAÇÃO', 'TIPO DE OCORRÊNCIA', 'VIGILANTE', 'SAIDA']
+
+for col in colunas_texto:
+    # Remove espaços extras e transforma tudo em MAIÚSCULAS
+    df_analise[col] = df_analise[col].astype(str).str.strip().str.upper()
+    # Corrige o falso nulo 'NAN' textual para o nulo real do Pandas
+    df_analise[col] = df_analise[col].replace('NAN', np.nan)
+    # Altera para tipo categoria para economizar memória
+    df_analise[col] = df_analise[col].astype('category')
+
+# ==========================================
+# 4. TRANSFORMAÇÃO DE TIPOS E CÁLCULO DE TEMPO
+# ==========================================
+# Converte a Data
+df_analise['DATA'] = pd.to_datetime(df_analise['DATA'], errors='coerce')
+
+# Converte os Horários (removendo AM/PM automaticamente nos bastidores)
+for col in ['HORÁRIO', 'INICIO_GRAVACAO', 'FIM_GRAVACAO']:
+    df_analise[col] = pd.to_timedelta(df_analise[col].astype(str), errors='coerce')
+
+# Cria as métricas de duração da gravação
+df_analise['DURACAO_GRAVACAO'] = df_analise['FIM_GRAVACAO'] - df_analise['INICIO_GRAVACAO']
+df_analise['DURACAO_SEGUNDOS'] = df_analise['DURACAO_GRAVACAO'].dt.total_seconds()
+
+print("--- Tratamento de dados concluído com sucesso! ---")
+
+# ==========================================
+# 5. ANÁLISE EXPLORATÓRIA E VISUALIZAÇÃO
+# ==========================================
+sns.set_theme(style="whitegrid")
+
+# 5.1 Gráfico: Top 10 Saídas
+top_10_saidas = df_analise['SAIDA'].value_counts().head(10)
+plt.figure(figsize=(10, 6))
+sns.barplot(x=top_10_saidas.values, y=top_10_saidas.index, order=top_10_saidas.index, palette="Blues_r")
+plt.title("Top 10 Saídas Mais Utilizadas em Acompanhamentos", fontsize=14, fontweight='bold')
+plt.xlabel("Quantidade de Acionamentos")
+plt.ylabel("Saída")
+plt.tight_layout()
+plt.show()
+
+# 5.2 Gráfico: Top 10 Vigilantes (Ignorando os nulos no cálculo)
+df_aux_vigilante = df_analise.dropna(subset=['DURACAO_SEGUNDOS'])
+top_10_vigilantes = df_aux_vigilante['VIGILANTE'].value_counts().head(10)
+plt.figure(figsize=(10, 6))
+sns.barplot(x=top_10_vigilantes.values, y=top_10_vigilantes.index, order=top_10_vigilantes.index, palette="Greens_r")
+plt.title("Top 10 Vigilantes Mais Atuantes", fontsize=14, fontweight='bold')
+plt.xlabel("Quantidade de Acompanhamentos")
+plt.ylabel("Vigilante")
+plt.tight_layout()
+plt.show()
+
+# 5.3 Gráfico: Proporção de Turnos (Pizza)
+contagem_turnos = df_analise['TURNO'].value_counts()
+plt.figure(figsize=(6, 6))
+plt.pie(contagem_turnos.values, labels=contagem_turnos.index, autopct='%1.1f%%', colors=['#4C72B0', '#DD8452', '#55A868'], startangle=140)
+plt.title("Proporção de Ocorrências por Turno", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
